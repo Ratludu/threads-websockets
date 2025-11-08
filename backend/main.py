@@ -1,3 +1,4 @@
+import os
 import redis
 import asyncio
 import json
@@ -9,7 +10,12 @@ from comments import Comment
 from manager import ConnectionManger
 
 # Redis client for data storage and pub/sub
-redis_client = redis.Redis(host="localhost", port=6379, db=0, decode_responses=True)
+redis_client = redis.Redis(
+    host=os.getenv("REDIS_HOST", "localhost"),
+    port=int(os.getenv("REDIS_PORT", 6379)),
+    db=0,
+    decode_responses=True
+)
 
 app = FastAPI(
     title="WebSocket Threads API",
