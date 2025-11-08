@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thread Comments - Real-time</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>💬 Thread Comments</h1>
+            <p class="subtitle">Real-time WebSocket Demo</p>
+        </header>
+
+        <div class="thread-selector">
+            <label for="thread-select">Select Thread:</label>
+            <select id="thread-select">
+                <option value="">Choose a thread...</option>
+                <option value="general">General Discussion</option>
+                <option value="tech">Tech Talk</option>
+                <option value="python">I love python</option>
+                <option value="random">Random</option>
+            </select>
+            <span class="connection-status" id="status">⚪ Disconnected</span>
+        </div>
+
+        <div class="main-content" id="main-content" style="display: none;">
+            <div class="comments-section">
+                <div class="comments-header">
+                    <h2>Comments</h2>
+                    <button id="refresh-btn" class="icon-btn" title="Refresh comments">🔄</button>
+                </div>
+                <div class="comments-container" id="comments-container">
+                    <div class="loading">Loading comments...</div>
+                </div>
+            </div>
+
+            <div class="comment-form">
+                <input 
+                    type="text" 
+                    id="author-input" 
+                    placeholder="Your name" 
+                    maxlength="50"
+                />
+                <div class="message-input-container">
+                    <textarea 
+                        id="message-input" 
+                        placeholder="Type your comment..." 
+                        rows="3"
+                        maxlength="500"
+                    ></textarea>
+                    <button id="send-btn">Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
