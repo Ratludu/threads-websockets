@@ -14,7 +14,7 @@ redis_client = redis.Redis(
     host=os.getenv("REDIS_HOST", "localhost"),
     port=int(os.getenv("REDIS_PORT", 6379)),
     db=0,
-    decode_responses=True
+    decode_responses=True,
 )
 
 app = FastAPI(
@@ -82,6 +82,28 @@ async def create_comment(thread_id: str, body: Comment) -> Comment:
     return comment
 
 
+@app.delete("/threads/{thread_id}/comments/{comment_id}/")
+async def delete_comment(thread_id: str, comment_id: str):
+    """
+    Creates the comment onto the associated thread.
+    """
+
+    # Store in redis
+    response = redis_client.delete(f"comment:{comment_id}")
+    redis_client.lrem(f"thread:{thread_id}", 1, f"comment:{comment_id}")
+
+    # Create message for pub/sub
+    message = {
+        "type": "delete_comment",
+        "thread_id": thread_id,
+        "comment": {"comment_id": comment_id},
+    }
+
+    redis_client.publish(f"thread:{thread_id}", json.dumps(message))
+
+    return {"status": "ok"}
+
+
 @app.get("/threads/{thread_id}/comments/", response_model=List[Comment])
 async def get_comments(thread_id: str) -> List[Comment]:
     lookup = f"thread:{thread_id}"
@@ -112,8 +134,7 @@ async def websocket_thread_endpoint(websocket: WebSocket, thread_id: str):
             message = pubsub.get_message(timeout=0.1)
             if message and message["type"] == "message":
                 data = json.loads(message["data"])
-                print(data)
-                await manager.send_personal_message(data["comment"], websocket)
+                await manager.send_personal_message(data, websocket)
                 # await manager.broadcast(data["comment"], websocket)
             await asyncio.sleep(1)
     except WebSocketDisconnect:
