@@ -1,10 +1,12 @@
 import redis
+import asyncio
 import json
 from typing import List
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from comments import Comment
+from manager import ConnectionManger
 
 # Redis client for data storage and pub/sub
 redis_client = redis.Redis(host="localhost", port=6379, db=0, decode_responses=True)
@@ -22,6 +24,8 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+manager = ConnectionManger()
 
 ##
 # Logic of WebSockets for a simple thread application.
@@ -85,6 +89,35 @@ async def get_comments(thread_id: str) -> List[Comment]:
         comments.append(Comment(**comment))
 
     return comments
+
+
+@app.websocket("/ws/{thread_id}/comments/")
+async def websocket_thread_endpoint(websocket: WebSocket, thread_id: str):
+    # accept connection
+    await manager.connect(websocket)
+
+    # subscribe to event of thread topic
+    pubsub = redis_client.pubsub()
+    pubsub.subscribe(f"thread:{thread_id}")
+
+    # event loop
+    try:
+        while True:
+            message = pubsub.get_message(timeout=0.1)
+            if message and message["type"] == "message":
+                data = json.loads(message["data"])
+                print(data)
+                await manager.send_personal_message(data["comment"], websocket)
+                # await manager.broadcast(data["comment"], websocket)
+            await asyncio.sleep(1)
+    except WebSocketDisconnect:
+        print(f"Websocket closed for thread: {thread_id}")
+    except Exception as e:
+        print(f"Error: {e}")
+    finally:
+        manager.disconnect(websocket)
+        pubsub.unsubscribe(f"thread:{thread_id}")
+        pubsub.close()
 
 
 if __name__ == "__main__":

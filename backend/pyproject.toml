@@ -11,4 +11,5 @@ dependencies = [
     "redis>=7.0.1",
     "ruff>=0.14.4",
     "uvicorn>=0.38.0",
+    "websockets>=15.0.1",
 ]
