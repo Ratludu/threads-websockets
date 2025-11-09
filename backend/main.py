@@ -1,12 +1,21 @@
 import os
+from uuid import UUID, uuid4
 import redis
 import asyncio
 import json
 from typing import List
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
+from auth import (
+    create_access_token,
+    get_current_user,
+    hash_password,
+    verify_password,
+    verify_token,
+)
 from comments import Comment
+from users import UserLogin, UserResponse
 from manager import ConnectionManger
 
 # Redis client for data storage and pub/sub
@@ -55,14 +64,53 @@ manager = ConnectionManger()
 ##
 
 
+@app.post("/auth/register/", response_model=UserResponse)
+async def register(user: UserLogin) -> UserResponse:
+    if redis_client.exists(f"username:{user.username}"):
+        raise HTTPException(400, "Username already exists")
+
+    user_id = str(uuid4())
+    new_user = {
+        "user_id": user_id,
+        "username": user.username,
+        "password": hash_password(user.password),
+    }
+
+    redis_client.hset(f"user:{user_id}", mapping=new_user)
+    redis_client.set(f"username:{user.username}", user_id)
+
+    return UserResponse(**{"user_id": UUID(user_id), "username": user.username})
+
+
+@app.post("/auth/login/")
+async def login(user: UserLogin):
+    user_id = redis_client.get(f"username:{user.username}")
+    if not user_id:
+        raise HTTPException(401, "Invalid credentials")
+
+    user_data = redis_client.hgetall(f"user:{user_id}")
+    if not user_id:
+        raise HTTPException(401, "Invalid credentials")
+
+    if not verify_password(user.password, user_data["password_hash"]):
+        raise HTTPException(401, "Invalid credentials")
+
+    token = create_access_token({"sub": user.username, "user_id": user_id})
+
+    return {"access_token": token, "token_type": "bearer"}
+
+
 @app.post("/threads/{thread_id}/comments/", response_model=Comment)
-async def create_comment(thread_id: str, body: Comment) -> Comment:
+async def create_comment(
+    thread_id: str, body: Comment, current_user: dict = Depends(get_current_user)
+) -> Comment:
     """
     Creates the comment onto the associated thread.
     """
     # created the comment object
     comment = Comment(**body.model_dump())
     comment.thread_id = thread_id
+    comment.author = current_user["username"]
 
     comment_to_dict = comment.model_dump(mode="json")
 
@@ -83,7 +131,9 @@ async def create_comment(thread_id: str, body: Comment) -> Comment:
 
 
 @app.delete("/threads/{thread_id}/comments/{comment_id}/")
-async def delete_comment(thread_id: str, comment_id: str):
+async def delete_comment(
+    thread_id: str, comment_id: str, current_user: dict = Depends(get_current_user)
+):
     """
     Creates the comment onto the associated thread.
     """
@@ -105,7 +155,9 @@ async def delete_comment(thread_id: str, comment_id: str):
 
 
 @app.get("/threads/{thread_id}/comments/", response_model=List[Comment])
-async def get_comments(thread_id: str) -> List[Comment]:
+async def get_comments(
+    thread_id: str, current_user: dict = Depends(get_current_user)
+) -> List[Comment]:
     lookup = f"thread:{thread_id}"
     comment_ids = redis_client.lrange(lookup, 0, -1)
     if comment_ids is None:
@@ -120,7 +172,16 @@ async def get_comments(thread_id: str) -> List[Comment]:
 
 
 @app.websocket("/ws/{thread_id}/comments/")
-async def websocket_thread_endpoint(websocket: WebSocket, thread_id: str):
+async def websocket_thread_endpoint(websocket: WebSocket, thread_id: str, token: str):
+    try:
+        payload = verify_token(token)
+        username = payload.get("sub")
+        if not username:
+            await websocket.close(code=1008)
+            return
+    except HTTPException:
+        await websocket.close(code=1008)
+        return
     # accept connection
     await manager.connect(websocket)
 
@@ -136,7 +197,7 @@ async def websocket_thread_endpoint(websocket: WebSocket, thread_id: str):
                 data = json.loads(message["data"])
                 await manager.send_personal_message(data, websocket)
                 # await manager.broadcast(data["comment"], websocket)
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.01)
     except WebSocketDisconnect:
         print(f"Websocket closed for thread: {thread_id}")
     except Exception as e:
