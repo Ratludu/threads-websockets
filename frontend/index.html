@@ -13,44 +13,76 @@
             <p class="subtitle">Real-time WebSocket Demo</p>
         </header>
 
-        <div class="thread-selector">
-            <label for="thread-select">Select Thread:</label>
-            <select id="thread-select">
-                <option value="">Choose a thread...</option>
-                <option value="general">General Discussion</option>
-                <option value="tech">Tech Talk</option>
-                <option value="python">I love python</option>
-                <option value="random">Random</option>
-            </select>
-            <span class="connection-status" id="status">⚪ Disconnected</span>
-        </div>
-
-        <div class="main-content" id="main-content" style="display: none;">
-            <div class="comments-section">
-                <div class="comments-header">
-                    <h2>Comments</h2>
-                    <button id="refresh-btn" class="icon-btn" title="Refresh comments">🔄</button>
-                </div>
-                <div class="comments-container" id="comments-container">
-                    <div class="loading">Loading comments...</div>
+        <!-- Auth Section -->
+        <div class="auth-section" id="auth-section">
+            <div class="auth-card">
+                <h2>Welcome!</h2>
+                <p class="auth-subtitle">Login or create an account to start chatting</p>
+                
+                <div class="auth-form">
+                    <input 
+                        type="text" 
+                        id="auth-username" 
+                        placeholder="Username" 
+                        maxlength="30"
+                        autocomplete="username"
+                    />
+                    <input 
+                        type="password" 
+                        id="auth-password" 
+                        placeholder="Password" 
+                        maxlength="100"
+                        autocomplete="current-password"
+                    />
+                    <div class="auth-buttons">
+                        <button id="login-btn" class="btn-primary">Login</button>
+                        <button id="register-btn" class="btn-secondary">Register</button>
+                    </div>
+                    <div id="auth-error" class="auth-error" style="display: none;"></div>
                 </div>
             </div>
+        </div>
 
-            <div class="comment-form">
-                <input 
-                    type="text" 
-                    id="author-input" 
-                    placeholder="Your name" 
-                    maxlength="50"
-                />
-                <div class="message-input-container">
-                    <textarea 
-                        id="message-input" 
-                        placeholder="Type your comment..." 
-                        rows="3"
-                        maxlength="500"
-                    ></textarea>
-                    <button id="send-btn">Send</button>
+        <!-- Main App Section (hidden until logged in) -->
+        <div class="app-section" id="app-section" style="display: none;">
+            <div class="user-bar">
+                <span class="user-info">👤 <span id="current-user"></span></span>
+                <button id="logout-btn" class="btn-logout">Logout</button>
+            </div>
+
+            <div class="thread-selector">
+                <label for="thread-select">Select Thread:</label>
+                <select id="thread-select">
+                    <option value="">Choose a thread...</option>
+                    <option value="general">General Discussion</option>
+                    <option value="tech">Tech Talk</option>
+                    <option value="python">I love python</option>
+                    <option value="random">Random</option>
+                </select>
+                <span class="connection-status" id="status">⚪ Disconnected</span>
+            </div>
+
+            <div class="main-content" id="main-content" style="display: none;">
+                <div class="comments-section">
+                    <div class="comments-header">
+                        <h2>Comments</h2>
+                        <button id="refresh-btn" class="icon-btn" title="Refresh comments">🔄</button>
+                    </div>
+                    <div class="comments-container" id="comments-container">
+                        <div class="loading">Loading comments...</div>
+                    </div>
+                </div>
+
+                <div class="comment-form">
+                    <div class="message-input-container">
+                        <textarea 
+                            id="message-input" 
+                            placeholder="Type your comment..." 
+                            rows="3"
+                            maxlength="500"
+                        ></textarea>
+                        <button id="send-btn">Send</button>
+                    </div>
                 </div>
             </div>
         </div>

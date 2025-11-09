@@ -92,7 +92,7 @@ async def login(user: UserLogin):
     if not user_id:
         raise HTTPException(401, "Invalid credentials")
 
-    if not verify_password(user.password, user_data["password_hash"]):
+    if not verify_password(user.password, user_data["password"]):
         raise HTTPException(401, "Invalid credentials")
 
     token = create_access_token({"sub": user.username, "user_id": user_id})

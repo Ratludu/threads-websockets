@@ -14,7 +14,7 @@ SECRET = os.getenv("SECRET")
 ALGO = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
-pwd_context = CryptContext(schemes=["bcrypt"])
+pwd_context = CryptContext(schemes=["argon2"])
 security = HTTPBearer()
 
 

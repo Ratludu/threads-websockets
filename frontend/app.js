@@ -3,23 +3,40 @@ const WS_URL = 'ws://localhost:8000';
 
 let currentThread = null;
 let websocket = null;
-let author = localStorage.getItem('author') || '';
+let jwtToken = localStorage.getItem('jwt_token');
+let currentUser = localStorage.getItem('current_user');
 let commentsById = new Map(); // Track comments for efficient updates
 
 // DOM Elements
+const authSection = document.getElementById('auth-section');
+const appSection = document.getElementById('app-section');
+const authUsername = document.getElementById('auth-username');
+const authPassword = document.getElementById('auth-password');
+const loginBtn = document.getElementById('login-btn');
+const registerBtn = document.getElementById('register-btn');
+const logoutBtn = document.getElementById('logout-btn');
+const authError = document.getElementById('auth-error');
+const currentUserDisplay = document.getElementById('current-user');
 const threadSelect = document.getElementById('thread-select');
 const statusIndicator = document.getElementById('status');
 const mainContent = document.getElementById('main-content');
 const commentsContainer = document.getElementById('comments-container');
-const authorInput = document.getElementById('author-input');
 const messageInput = document.getElementById('message-input');
 const sendBtn = document.getElementById('send-btn');
 const refreshBtn = document.getElementById('refresh-btn');
 
 // Initialize
-authorInput.value = author;
+checkAuthStatus();
 
 // Event Listeners
+loginBtn.addEventListener('click', handleLogin);
+registerBtn.addEventListener('click', handleRegister);
+logoutBtn.addEventListener('click', handleLogout);
+authPassword.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+        handleLogin();
+    }
+});
 threadSelect.addEventListener('change', handleThreadChange);
 sendBtn.addEventListener('click', sendComment);
 messageInput.addEventListener('keypress', (e) => {
@@ -27,15 +44,147 @@ messageInput.addEventListener('keypress', (e) => {
         sendComment();
     }
 });
-authorInput.addEventListener('input', (e) => {
-    author = e.target.value;
-    localStorage.setItem('author', author);
-});
 refreshBtn.addEventListener('click', () => {
     if (currentThread) {
         loadComments(currentThread);
     }
 });
+
+// Auth Functions
+function checkAuthStatus() {
+    if (jwtToken && currentUser) {
+        showApp();
+    } else {
+        showAuth();
+    }
+}
+
+function showAuth() {
+    authSection.style.display = 'block';
+    appSection.style.display = 'none';
+    authError.style.display = 'none';
+    authUsername.value = '';
+    authPassword.value = '';
+}
+
+function showApp() {
+    authSection.style.display = 'none';
+    appSection.style.display = 'block';
+    currentUserDisplay.textContent = currentUser;
+}
+
+function showAuthError(message) {
+    authError.textContent = message;
+    authError.style.display = 'block';
+}
+
+async function handleLogin() {
+    const username = authUsername.value.trim();
+    const password = authPassword.value.trim();
+
+    if (!username || !password) {
+        showAuthError('Please enter both username and password');
+        return;
+    }
+
+    loginBtn.disabled = true;
+    registerBtn.disabled = true;
+    authError.style.display = 'none';
+
+    try {
+        const response = await fetch(`${API_URL}/auth/login/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ username, password }),
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Login failed');
+        }
+
+        const data = await response.json();
+        jwtToken = data.access_token;
+        currentUser = username;
+        
+        localStorage.setItem('jwt_token', jwtToken);
+        localStorage.setItem('current_user', currentUser);
+        
+        showApp();
+    } catch (error) {
+        console.error('Login error:', error);
+        showAuthError(error.message || 'Login failed. Please try again.');
+    } finally {
+        loginBtn.disabled = false;
+        registerBtn.disabled = false;
+    }
+}
+
+async function handleRegister() {
+    const username = authUsername.value.trim();
+    const password = authPassword.value.trim();
+
+    if (!username || !password) {
+        showAuthError('Please enter both username and password');
+        return;
+    }
+
+    if (username.length < 3) {
+        showAuthError('Username must be at least 3 characters');
+        return;
+    }
+
+    if (password.length < 6) {
+        showAuthError('Password must be at least 6 characters');
+        return;
+    }
+
+    loginBtn.disabled = true;
+    registerBtn.disabled = true;
+    authError.style.display = 'none';
+
+    try {
+        const response = await fetch(`${API_URL}/auth/register/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ username, password }),
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Registration failed');
+        }
+
+        // Auto-login after registration
+        await handleLogin();
+    } catch (error) {
+        console.error('Registration error:', error);
+        showAuthError(error.message || 'Registration failed. Please try again.');
+        loginBtn.disabled = false;
+        registerBtn.disabled = false;
+    }
+}
+
+function handleLogout() {
+    if (websocket) {
+        websocket.close();
+    }
+    
+    jwtToken = null;
+    currentUser = null;
+    localStorage.removeItem('jwt_token');
+    localStorage.removeItem('current_user');
+    
+    threadSelect.value = '';
+    mainContent.style.display = 'none';
+    commentsById.clear();
+    
+    showAuth();
+}
 
 // Thread Selection Handler
 async function handleThreadChange(e) {
@@ -64,7 +213,16 @@ async function loadComments(threadId) {
     commentsContainer.innerHTML = '<div class="loading">Loading comments...</div>';
     
     try {
-        const response = await fetch(`${API_URL}/threads/${threadId}/comments/`);
+        const response = await fetch(`${API_URL}/threads/${threadId}/comments/`, {
+            headers: {
+                'Authorization': `Bearer ${jwtToken}`,
+            },
+        });
+        
+        if (response.status === 401) {
+            handleLogout();
+            throw new Error('Session expired. Please login again.');
+        }
         
         if (!response.ok) {
             throw new Error('Failed to load comments');
@@ -179,7 +337,7 @@ function connectWebSocket(threadId) {
     
     updateStatus('connecting');
     
-    websocket = new WebSocket(`${WS_URL}/ws/${threadId}/comments/`);
+    websocket = new WebSocket(`${WS_URL}/ws/${threadId}/comments/?token=${jwtToken}`);
     
     websocket.onopen = () => {
         console.log('WebSocket connected');
@@ -202,16 +360,21 @@ function connectWebSocket(threadId) {
         updateStatus('error');
     };
     
-    websocket.onclose = () => {
+    websocket.onclose = (event) => {
         console.log('WebSocket disconnected');
         updateStatus('disconnected');
+        
+        // If closed with auth error, logout user
+        if (event.code === 1008) {
+            handleLogout();
+            alert('Authentication failed. Please login again.');
+        }
     };
 }
 
 // Send Comment
 async function sendComment() {
     const content = messageInput.value.trim();
-    const authorName = authorInput.value.trim() || 'Anonymous';
 
     if (!content || !currentThread) {
         return;
@@ -224,12 +387,18 @@ async function sendComment() {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                'Authorization': `Bearer ${jwtToken}`,
             },
             body: JSON.stringify({
-                author: authorName,
+                author: currentUser,
                 content,
             }),
         });
+
+        if (response.status === 401) {
+            handleLogout();
+            throw new Error('Session expired. Please login again.');
+        }
 
         if (!response.ok) {
             throw new Error('Failed to send comment');
@@ -266,7 +435,15 @@ async function deleteComment(commentId) {
     try {
         const response = await fetch(`${API_URL}/threads/${currentThread}/comments/${commentId}/`, {
             method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${jwtToken}`,
+            },
         });
+
+        if (response.status === 401) {
+            handleLogout();
+            throw new Error('Session expired. Please login again.');
+        }
 
         if (!response.ok) {
             throw new Error('Failed to delete comment');
