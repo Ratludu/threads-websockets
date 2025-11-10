@@ -1,10 +1,8 @@
 import os
 from uuid import UUID, uuid4
 import redis
-import asyncio
-import json
 from typing import List
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
 from auth import (
@@ -12,11 +10,11 @@ from auth import (
     get_current_user,
     hash_password,
     verify_password,
-    verify_token,
 )
 from comments import Comment
 from users import UserLogin, UserResponse
-from manager import ConnectionManger
+from sockets import app as sockets_app
+from sockets import sio
 
 # Redis client for data storage and pub/sub
 redis_client = redis.Redis(
@@ -30,6 +28,7 @@ app = FastAPI(
     title="WebSocket Threads API",
     description="Real-time thread comments with WebSockets",
 )
+app.mount("/socket.io", sockets_app)
 
 # Add CORS middleware
 app.add_middleware(
@@ -40,7 +39,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-manager = ConnectionManger()
 
 ##
 # Logic of WebSockets for a simple thread application.
@@ -120,12 +118,12 @@ async def create_comment(
 
     # Create message for pub/sub
     message = {
-        "type": "new_comment",
+        "event": "new_comment",
         "thread_id": thread_id,
-        "comment": comment_to_dict,
+        "data": comment_to_dict,
     }
 
-    redis_client.publish(f"thread:{thread_id}", json.dumps(message))
+    await sio.emit("new_comment", message, room=f"thread:{thread_id}")
 
     return comment
 
@@ -144,12 +142,12 @@ async def delete_comment(
 
     # Create message for pub/sub
     message = {
-        "type": "delete_comment",
+        "event": "delete_comment",
         "thread_id": thread_id,
-        "comment": {"comment_id": comment_id},
+        "data": {"comment_id": comment_id},
     }
 
-    redis_client.publish(f"thread:{thread_id}", json.dumps(message))
+    await sio.emit("delete_comment", message, room=f"thread:{thread_id}")
 
     return {"status": "ok"}
 
@@ -169,43 +167,6 @@ async def get_comments(
         comments.append(Comment(**comment))
 
     return comments
-
-
-@app.websocket("/ws/{thread_id}/comments/")
-async def websocket_thread_endpoint(websocket: WebSocket, thread_id: str, token: str):
-    try:
-        payload = verify_token(token)
-        username = payload.get("sub")
-        if not username:
-            await websocket.close(code=1008)
-            return
-    except HTTPException:
-        await websocket.close(code=1008)
-        return
-    # accept connection
-    await manager.connect(websocket)
-
-    # subscribe to event of thread topic
-    pubsub = redis_client.pubsub()
-    pubsub.subscribe(f"thread:{thread_id}")
-
-    # event loop
-    try:
-        while True:
-            message = pubsub.get_message(timeout=0.1)
-            if message and message["type"] == "message":
-                data = json.loads(message["data"])
-                await manager.send_personal_message(data, websocket)
-                # await manager.broadcast(data["comment"], websocket)
-            await asyncio.sleep(0.01)
-    except WebSocketDisconnect:
-        print(f"Websocket closed for thread: {thread_id}")
-    except Exception as e:
-        print(f"Error: {e}")
-    finally:
-        manager.disconnect(websocket)
-        pubsub.unsubscribe(f"thread:{thread_id}")
-        pubsub.close()
 
 
 if __name__ == "__main__":
